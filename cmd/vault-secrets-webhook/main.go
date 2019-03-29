@@ -22,11 +22,14 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/docker/docker/api/types"
+	"github.com/docker/docker/client"
 	whhttp "github.com/slok/kubewebhook/pkg/http"
 	"github.com/slok/kubewebhook/pkg/log"
 	whcontext "github.com/slok/kubewebhook/pkg/webhook/context"
 	"github.com/slok/kubewebhook/pkg/webhook/mutating"
 	"github.com/spf13/viper"
+	"golang.org/x/net/context"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -155,16 +158,27 @@ func vaultSecretsMutator(ctx context.Context, obj metav1.Object) (bool, error) {
 func parseVaultConfig(obj metav1.Object) vaultConfig {
 	var vaultConfig vaultConfig
 	annotations := obj.GetAnnotations()
+	namespace := obj.GetNamespace()
 	vaultConfig.addr = annotations["vault.security.banzaicloud.io/vault-addr"]
+	if vaultConfig.addr == "" {
+		vaultConfig.addr = viper.GetString("vault_addr")
+	}
 	vaultConfig.role = annotations["vault.security.banzaicloud.io/vault-role"]
 	if vaultConfig.role == "" {
-		vaultConfig.role = "default"
+		if viper.IsSet("vault_role") {
+			vaultConfig.role = viper.GetString("vault_role")
+		} else {
+			vaultConfig.role = fmt.Sprintf("vault-secrets-%s", namespace)
+		}
 	}
 	vaultConfig.path = annotations["vault.security.banzaicloud.io/vault-path"]
 	if vaultConfig.path == "" {
-		vaultConfig.path = "kubernetes"
+		vaultConfig.path = viper.GetString("vault_path")
 	}
 	vaultConfig.skipVerify = annotations["vault.security.banzaicloud.io/vault-skip-verify"]
+	if vaultConfig.skipVerify == "" {
+		vaultConfig.skipVerify = viper.GetString("vault_skip_verify")
+	}
 	vaultConfig.useAgent, _ = strconv.ParseBool(annotations["vault.security.banzaicloud.io/vault-agent"])
 	return vaultConfig
 }
@@ -220,7 +234,7 @@ func lookForEnvFrom(envFrom []corev1.EnvFromSource, ns string) ([]corev1.EnvVar,
 				return envVars, err
 			}
 			for key, value := range data {
-				if (strings.HasPrefix(value, "vault:") || strings.HasPrefix(value, ">>vault:")){
+				if strings.HasPrefix(value, "vault:") || strings.HasPrefix(value, ">>vault:") {
 					envFromCM := corev1.EnvVar{
 						Name:  key,
 						Value: value,
@@ -235,7 +249,7 @@ func lookForEnvFrom(envFrom []corev1.EnvFromSource, ns string) ([]corev1.EnvVar,
 				return envVars, err
 			}
 			for key, value := range data {
-				if (strings.HasPrefix(string(value), "vault:") || strings.HasPrefix(string(value), ">>vault:")){
+				if strings.HasPrefix(string(value), "vault:") || strings.HasPrefix(string(value), ">>vault:") {
 					envFromSec := corev1.EnvVar{
 						Name:  key,
 						Value: string(value),
@@ -310,6 +324,16 @@ func mutateContainers(containers []corev1.Container, vaultConfig vaultConfig, ns
 		}
 
 		mutated = true
+
+		ctx := context.Background()
+		cli, err := dockerclient.NewEnvClient()
+		if err != nil {
+			panic(err)
+		}
+		out, err := cli.ImagePull(ctx, "datadog/agent", types.ImagePullOptions{})
+		if err != nil {
+			panic(err)
+		}
 
 		args := append(container.Command, container.Args...)
 
@@ -412,6 +436,9 @@ func mutatePodSpec(obj metav1.Object, podSpec *corev1.PodSpec, vaultConfig vault
 func initConfig() {
 	viper.SetDefault("vault_image", "vault:latest")
 	viper.SetDefault("vault_env_image", "banzaicloud/vault-env:latest")
+	viper.SetDefault("vault_addr", "http://vault:9200")
+	viper.SetDefault("vault_path", "kubernetes")
+	viper.SetDefault("vault_skip_verify", "false")
 	viper.AutomaticEnv()
 }
 
