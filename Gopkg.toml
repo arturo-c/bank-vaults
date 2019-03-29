@@ -24,10 +24,13 @@
 #   go-tests = true
 #   unused-packages = true
 
+[[override]]
+  name = "github.com/docker/distribution"
+  branch = "master"
 
 [[constraint]]
-  branch = "master"
   name = "github.com/docker/docker"
+  branch = "master"
 
 [[constraint]]
   name = "github.com/fsnotify/fsnotify"
@@ -58,16 +61,16 @@
   name = "golang.org/x/net"
 
 [[constraint]]
-  branch = "master"
+  branch = "release-1.11"
   name = "k8s.io/api"
 
 [[constraint]]
-  branch = "release-1.10"
+  branch = "release-1.11"
   name = "k8s.io/apimachinery"
 
 [[constraint]]
   name = "k8s.io/client-go"
-  version = "4.0.0"
+  branch = "release-8.0"
 
 [prune]
   go-tests = true

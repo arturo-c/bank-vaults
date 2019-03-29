@@ -22,14 +22,13 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/client"
 	whhttp "github.com/slok/kubewebhook/pkg/http"
 	"github.com/slok/kubewebhook/pkg/log"
 	whcontext "github.com/slok/kubewebhook/pkg/webhook/context"
 	"github.com/slok/kubewebhook/pkg/webhook/mutating"
 	"github.com/spf13/viper"
-	"golang.org/x/net/context"
+	xcontext "golang.org/x/net/context"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -150,15 +149,14 @@ func vaultSecretsMutator(ctx context.Context, obj metav1.Object) (bool, error) {
 		return false, nil
 	}
 
-	vaultConfig := parseVaultConfig(obj)
+	vaultConfig := parseVaultConfig(obj, whcontext.GetAdmissionRequest(ctx).Namespace)
 
 	return false, mutatePodSpec(obj, podSpec, vaultConfig, whcontext.GetAdmissionRequest(ctx).Namespace)
 }
 
-func parseVaultConfig(obj metav1.Object) vaultConfig {
+func parseVaultConfig(obj metav1.Object, namespace string) vaultConfig {
 	var vaultConfig vaultConfig
 	annotations := obj.GetAnnotations()
-	namespace := obj.GetNamespace()
 	vaultConfig.addr = annotations["vault.security.banzaicloud.io/vault-addr"]
 	if vaultConfig.addr == "" {
 		vaultConfig.addr = viper.GetString("vault_addr")
@@ -325,17 +323,19 @@ func mutateContainers(containers []corev1.Container, vaultConfig vaultConfig, ns
 
 		mutated = true
 
-		ctx := context.Background()
-		cli, err := dockerclient.NewEnvClient()
+		cli, err := client.NewClientWithOpts(client.WithVersion("1.38"))
 		if err != nil {
 			panic(err)
 		}
-		out, err := cli.ImagePull(ctx, "datadog/agent", types.ImagePullOptions{})
+		imageInspect, _, err := cli.ImageInspectWithRaw(xcontext.Background(), container.Image)
 		if err != nil {
 			panic(err)
 		}
 
 		args := append(container.Command, container.Args...)
+		if len(container.Command) == 0 && len(container.Args) == 0 {
+			args = append([]string(imageInspect.Config.Entrypoint), []string(imageInspect.Config.Cmd)...)
+		}
 
 		container.Command = []string{"/vault/vault-env"}
 		container.Args = args
