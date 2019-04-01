@@ -332,10 +332,12 @@ func mutateContainers(containers []corev1.Container, vaultConfig vaultConfig, ns
 			panic(err)
 		}
 
-		args := append(container.Command, container.Args...)
-		if len(container.Command) == 0 && len(container.Args) == 0 {
+		args := append(container.Command)
+		if len(container.Command) == 0 {
 			args = append([]string(imageInspect.Config.Entrypoint), []string(imageInspect.Config.Cmd)...)
+
 		}
+		args = append(container.Args)
 
 		container.Command = []string{"/vault/vault-env"}
 		container.Args = args
