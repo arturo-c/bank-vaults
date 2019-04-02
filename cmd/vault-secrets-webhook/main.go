@@ -22,6 +22,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/client"
 	whhttp "github.com/slok/kubewebhook/pkg/http"
 	"github.com/slok/kubewebhook/pkg/log"
@@ -323,17 +324,23 @@ func mutateContainers(containers []corev1.Container, vaultConfig vaultConfig, ns
 
 		mutated = true
 
-		cli, err := client.NewClientWithOpts(client.WithVersion("1.38"))
-		if err != nil {
-			panic(err)
-		}
-		imageInspect, _, err := cli.ImageInspectWithRaw(xcontext.Background(), container.Image)
-		if err != nil {
-			panic(err)
-		}
-
 		args := append(container.Command)
 		if len(args) == 0 {
+			// Pull docker image and inspect
+			cli, err := client.NewClientWithOpts(client.WithVersion("1.38"))
+			ctx := xcontext.Background()
+			if err != nil {
+				panic(err)
+			}
+			_, err = cli.ImagePull(ctx, container.Image, types.ImagePullOptions{})
+			if err != nil {
+				panic(err)
+			}
+			imageInspect, _, err := cli.ImageInspectWithRaw(ctx, container.Image)
+			if err != nil {
+				panic(err)
+			}
+
 			args = append(args, []string(imageInspect.Config.Entrypoint)...)
 			if len(container.Args) == 0 {
 				args = append(args, []string(imageInspect.Config.Cmd)...)
