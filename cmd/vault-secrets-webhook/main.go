@@ -16,12 +16,17 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
 	"strconv"
 	"strings"
 
+	//"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go/service/ecr"
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/client"
 	whhttp "github.com/slok/kubewebhook/pkg/http"
@@ -332,7 +337,31 @@ func mutateContainers(containers []corev1.Container, vaultConfig vaultConfig, ns
 			if err != nil {
 				panic(err)
 			}
-			_, err = cli.ImagePull(ctx, container.Image, types.ImagePullOptions{})
+
+			options := types.ImagePullOptions{}
+			if os.Getenv("AWS_ACCESS_KEY_ID") != "" {
+				sess := session.New()
+				svc := ecr.New(sess)
+
+				// request the token
+				resp, err := svc.GetAuthorizationToken(&ecr.GetAuthorizationTokenInput{})
+				if err != nil {
+					panic(err)
+				}
+				data, err := base64.StdEncoding.DecodeString(*resp.AuthorizationData[0].AuthorizationToken)
+				token := strings.SplitN(string(data), ":", 2)
+				authConfig := types.AuthConfig{
+					Username: token[0],
+					Password: token[1],
+				}
+				encodedJSON, err := json.Marshal(authConfig)
+				if err != nil {
+					panic(err)
+				}
+				authStr := base64.URLEncoding.EncodeToString(encodedJSON)
+				options = types.ImagePullOptions{RegistryAuth: authStr}
+			}
+			_, err = cli.ImagePull(ctx, container.Image, options)
 			if err != nil {
 				panic(err)
 			}
