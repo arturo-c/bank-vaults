@@ -339,7 +339,7 @@ func mutateContainers(containers []corev1.Container, vaultConfig vaultConfig, ns
 			}
 
 			options := types.ImagePullOptions{}
-			if os.Getenv("AWS_ACCESS_KEY_ID") != "" {
+			if os.Getenv("AWS_ACCESS_KEY_ID") != "" && strings.Contains(container.Image, "amazonaws.com") {
 				sess := session.New()
 				svc := ecr.New(sess)
 
